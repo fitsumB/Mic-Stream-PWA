@@ -180,7 +180,16 @@
                 audioContext = new AudioContext();
                 
                 // Get microphone stream
-                mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                mediaStream = await navigator.mediaDevices.getUserMedia({ 
+                    audio: {
+                        echoCancellation: true,
+                        noiseSuppression: true,
+                        autoGainControl: true
+                    } 
+                });
+                
+                console.log('Microphone access granted successfully');
+                
                 const source = audioContext.createMediaStreamSource(mediaStream);
                 
                 // Create script processor for audio processing
@@ -208,7 +217,14 @@
                 
                 return true;
             } catch (error) {
-                console.error('Error starting audio stream:', error);
+                console.error('Error accessing microphone:', error);
+                if (error.name === 'NotAllowedError') {
+                    alert('Microphone access denied. Please allow microphone access in your browser settings and try again.');
+                } else if (error.name === 'NotFoundError') {
+                    alert('No microphone detected. Please connect a microphone and try again.');
+                } else {
+                    alert('Error accessing microphone: ' + (error.message || 'Unknown error'));
+                }
                 return false;
             }
         }
@@ -220,6 +236,21 @@
                 const serverIP = prompt('Enter server IP address:');
                 if (!serverIP) return;
 
+                // First check if we have microphone permission
+                try {
+                    // Request microphone permission separately first
+                    mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                    if (mediaStream) {
+                        // Stop this initial stream - we'll create a new one after connecting
+                        mediaStream.getTracks().forEach(track => track.stop());
+                        mediaStream = null;
+                    }
+                } catch (micError) {
+                    console.error('Microphone permission error:', micError);
+                    alert('Cannot access microphone. Please grant microphone permissions in your browser settings and try again.');
+                    return;
+                }
+
                 // Connect to server
                 const connected = await connectToServer(serverIP);
                 if (!connected) {
@@ -227,7 +258,7 @@
                     return;
                 }
 
-                // Start audio streaming
+                // Start audio streaming after successful connection
                 const streamStarted = await startAudioStream();
                 if (!streamStarted) {
                     alert('Failed to start audio stream');
@@ -237,11 +268,11 @@
                 // Update UI
                 startButton.disabled = true;
                 stopButton.disabled = false;
-                updateStatus(true);
                 
             } catch (error) {
-                console.error('Error:', error);
-                alert('Error starting microphone. Please ensure you have granted microphone permissions.');
+                console.error('Connection error:', error);
+                alert(error.message || 'Error connecting to server. Please try again.');
+                updateStatus(false);
             }
         });
 
