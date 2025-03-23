@@ -3,12 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <base href="/Mic-Stream-PWA/">
     <title>Mic Stream PWA</title>
-    <link rel="manifest" href="manifest.json">
+    <link rel="manifest" href="/Mic-Stream-PWA/manifest.json">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black">
     <meta name="apple-mobile-web-app-title" content="Mic Stream">
-    <link rel="apple-touch-icon" href="icon-192.png">
+    <link rel="apple-touch-icon" href="/Mic-Stream-PWA/icon-192.png">
     <style>
         body {
             font-family: -apple-system, BlinkMacSystemFont, sans-serif;
@@ -141,10 +142,17 @@
                 processor.onaudioprocess = (e) => {
                     if (socket && socket.readyState === WebSocket.OPEN) {
                         const audioData = e.inputBuffer.getChannelData(0);
+                        
+                        // Send audio as binary data instead of JSON
+                        // First, send a control message to indicate what's coming
                         socket.send(JSON.stringify({
-                            type: 'audio',
-                            data: audioData.buffer
+                            type: 'audio-info',
+                            sampleRate: audioContext.sampleRate,
+                            channels: 1
                         }));
+                        
+                        // Then send the actual audio data as binary
+                        socket.send(audioData);
                     }
                 };
                 
@@ -213,7 +221,7 @@
 
         // Register service worker for offline functionality
         if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.register('sw.js')
+            navigator.serviceWorker.register('/Mic-Stream-PWA/sw.js')
                 .then(reg => console.log('Service Worker registered'))
                 .catch(err => console.log('Service Worker registration failed', err));
         }
