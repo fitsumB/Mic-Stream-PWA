@@ -102,60 +102,79 @@
                     statusDiv.textContent = 'Connecting...';
                     statusDiv.className = 'status';
                     
+                    console.log(`Attempting to connect to WebSocket at ws://${serverIP}:8765`);
+                    
                     // Create WebSocket with timeout
                     socket = new WebSocket(`ws://${serverIP}:8765`);
                     
                     // Set connection timeout
                     const connectionTimeout = setTimeout(() => {
-                        if (socket.readyState !== WebSocket.OPEN) {
+                        if (socket && socket.readyState !== WebSocket.OPEN) {
+                            console.error('Connection timeout after 5 seconds');
                             socket.close();
                             updateStatus(false);
-                            reject(new Error('Connection timeout'));
+                            reject(new Error('Connection timeout. Make sure the server is running and the IP address is correct.'));
                         }
                     }, 5000); // 5 second timeout
                     
                     socket.onopen = () => {
                         clearTimeout(connectionTimeout);
-                        console.log('Connected to server');
+                        console.log('WebSocket connection opened successfully');
                         
                         // Verify connection with ping
-                        socket.send(JSON.stringify({ type: 'ping' }));
-                        
-                        // Wait brief period for pong before confirming connection
-                        setTimeout(() => {
-                            if (socket.readyState === WebSocket.OPEN) {
-                                updateStatus(true);
-                                // Send start message
-                                socket.send(JSON.stringify({ type: 'start' }));
-                                resolve(true);
-                            } else {
-                                updateStatus(false);
-                                reject(new Error('Connection validation failed'));
-                            }
-                        }, 500);
+                        try {
+                            socket.send(JSON.stringify({ type: 'ping' }));
+                            console.log('Sent ping to server');
+                            
+                            // Wait brief period for pong before confirming connection
+                            setTimeout(() => {
+                                if (socket && socket.readyState === WebSocket.OPEN) {
+                                    console.log('Connection confirmed, sending start command');
+                                    updateStatus(true);
+                                    // Send start message
+                                    socket.send(JSON.stringify({ type: 'start' }));
+                                    resolve(true);
+                                } else {
+                                    console.error('Connection validation failed after ping');
+                                    updateStatus(false);
+                                    reject(new Error('Connection validation failed'));
+                                }
+                            }, 1000); // Give more time for pong
+                        } catch (e) {
+                            console.error('Error during connection handshake:', e);
+                            reject(new Error('Error during connection handshake: ' + e.message));
+                        }
                     };
                     
                     socket.onmessage = (event) => {
+                        console.log('Received data from server');
                         try {
-                            const data = JSON.parse(event.data);
-                            console.log('Received message:', data);
-                            
-                            if (data.type === 'pong') {
-                                console.log('Connection verified with server pong');
+                            if (typeof event.data === 'string') {
+                                const data = JSON.parse(event.data);
+                                console.log('Received message:', data);
+                                
+                                if (data.type === 'pong') {
+                                    console.log('Connection verified with server pong');
+                                }
+                            } else {
+                                console.log('Received binary data of size:', event.data.size);
                             }
                         } catch (e) {
-                            // Binary data received
-                            console.log('Received binary data');
+                            console.error('Error parsing server message:', e);
                         }
                     };
 
                     socket.onclose = (event) => {
                         clearTimeout(connectionTimeout);
-                        console.log(`Disconnected from server: ${event.code} ${event.reason}`);
+                        console.log(`WebSocket connection closed: code=${event.code}, reason="${event.reason}", wasClean=${event.wasClean}`);
                         updateStatus(false);
                         // Only reject if we haven't resolved yet
-                        if (socket.readyState !== WebSocket.OPEN) {
-                            reject(new Error(`Connection closed: ${event.code} ${event.reason}`));
+                        if (socket && socket.readyState !== WebSocket.OPEN) {
+                            if (event.code === 1006) {
+                                reject(new Error('Connection closed abnormally. Check that the server is running and accessible.'));
+                            } else {
+                                reject(new Error(`Connection closed: ${event.code} ${event.reason}`));
+                            }
                         }
                     };
 
@@ -163,7 +182,7 @@
                         clearTimeout(connectionTimeout);
                         console.error('WebSocket error:', error);
                         updateStatus(false);
-                        reject(error);
+                        reject(new Error('Network error connecting to server. Make sure you are on the same WiFi network as the server.'));
                     };
                 });
             } catch (error) {
