@@ -97,28 +97,78 @@
         // Function to connect to WebSocket server
         async function connectToServer(serverIP) {
             try {
-                socket = new WebSocket(`ws://${serverIP}:8765`);
-                
-                socket.onopen = () => {
-                    console.log('Connected to server');
-                    updateStatus(true);
-                    // Send start message
-                    socket.send(JSON.stringify({ type: 'start' }));
-                };
+                return new Promise((resolve, reject) => {
+                    // Update UI to show connecting state
+                    statusDiv.textContent = 'Connecting...';
+                    statusDiv.className = 'status';
+                    
+                    // Create WebSocket with timeout
+                    socket = new WebSocket(`ws://${serverIP}:8765`);
+                    
+                    // Set connection timeout
+                    const connectionTimeout = setTimeout(() => {
+                        if (socket.readyState !== WebSocket.OPEN) {
+                            socket.close();
+                            updateStatus(false);
+                            reject(new Error('Connection timeout'));
+                        }
+                    }, 5000); // 5 second timeout
+                    
+                    socket.onopen = () => {
+                        clearTimeout(connectionTimeout);
+                        console.log('Connected to server');
+                        
+                        // Verify connection with ping
+                        socket.send(JSON.stringify({ type: 'ping' }));
+                        
+                        // Wait brief period for pong before confirming connection
+                        setTimeout(() => {
+                            if (socket.readyState === WebSocket.OPEN) {
+                                updateStatus(true);
+                                // Send start message
+                                socket.send(JSON.stringify({ type: 'start' }));
+                                resolve(true);
+                            } else {
+                                updateStatus(false);
+                                reject(new Error('Connection validation failed'));
+                            }
+                        }, 500);
+                    };
+                    
+                    socket.onmessage = (event) => {
+                        try {
+                            const data = JSON.parse(event.data);
+                            console.log('Received message:', data);
+                            
+                            if (data.type === 'pong') {
+                                console.log('Connection verified with server pong');
+                            }
+                        } catch (e) {
+                            // Binary data received
+                            console.log('Received binary data');
+                        }
+                    };
 
-                socket.onclose = () => {
-                    console.log('Disconnected from server');
-                    updateStatus(false);
-                };
+                    socket.onclose = (event) => {
+                        clearTimeout(connectionTimeout);
+                        console.log(`Disconnected from server: ${event.code} ${event.reason}`);
+                        updateStatus(false);
+                        // Only reject if we haven't resolved yet
+                        if (socket.readyState !== WebSocket.OPEN) {
+                            reject(new Error(`Connection closed: ${event.code} ${event.reason}`));
+                        }
+                    };
 
-                socket.onerror = (error) => {
-                    console.error('WebSocket error:', error);
-                    updateStatus(false);
-                };
-
-                return true;
+                    socket.onerror = (error) => {
+                        clearTimeout(connectionTimeout);
+                        console.error('WebSocket error:', error);
+                        updateStatus(false);
+                        reject(error);
+                    };
+                });
             } catch (error) {
                 console.error('Connection error:', error);
+                updateStatus(false);
                 return false;
             }
         }
